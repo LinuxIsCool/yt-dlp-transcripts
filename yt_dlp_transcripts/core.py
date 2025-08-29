@@ -12,6 +12,9 @@ from youtube_transcript_api import YouTubeTranscriptApi
 import click
 from urllib.parse import urlparse, parse_qs
 import re
+import requests
+import json
+import xml.etree.ElementTree as ET
 
 # Handle large CSV fields
 maxInt = sys.maxsize
@@ -64,6 +67,7 @@ def get_video_info(video_url, source_type=None, source_name=None, source_url=Non
         'subtitlesformat': 'vtt',
         'quiet': True,
         'no_warnings': True,
+        'skip_download': True,
     }
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -71,13 +75,122 @@ def get_video_info(video_url, source_type=None, source_name=None, source_url=Non
             info = ydl.extract_info(video_url, download=False)
             video_id = info.get('id')
             
-            # Get transcript
+            # Get transcript - try multiple methods
             transcript_text = ""
+            
+            # Method 1: Try youtube-transcript-api first (usually better formatting)
             try:
                 transcript = YouTubeTranscriptApi.get_transcript(video_id)
                 transcript_text = ' '.join([entry['text'] for entry in transcript])
+                print(f"  ✓ Transcript obtained via API")
             except Exception as e:
-                print(f"  Warning: Could not get transcript for {video_id}: {str(e)}")
+                # Method 2: Fallback to yt-dlp's subtitle extraction
+                try:
+                    if 'subtitles' in info:
+                        # Try to get English subtitles
+                        for lang in ['en', 'en-US', 'en-GB', 'a.en']:
+                            if lang in info['subtitles']:
+                                # Get the subtitle URL and download it
+                                subtitle_info = info['subtitles'][lang]
+                                if subtitle_info and len(subtitle_info) > 0:
+                                    # yt-dlp provides subtitle data in various formats
+                                    # Prefer json3, srv1, or vtt formats (skip hls manifests)
+                                    preferred_formats = ['json3', 'srv1', 'srv2', 'srv3', 'vtt']
+                                    
+                                    # Sort subtitle_info to prioritize preferred formats
+                                    sorted_subs = sorted(subtitle_info, 
+                                                       key=lambda x: preferred_formats.index(x.get('ext', 'other')) 
+                                                       if x.get('ext') in preferred_formats else 999)
+                                    
+                                    for sub in sorted_subs:
+                                        if 'url' in sub and sub.get('ext') != 'vtt':  # Skip HLS manifests
+                                            try:
+                                                resp = requests.get(sub['url'], timeout=10)
+                                                if resp.status_code == 200:
+                                                    content = resp.text
+                                                    
+                                                    # Handle JSON format (json3)
+                                                    if sub.get('ext') == 'json3':
+                                                        data = json.loads(content)
+                                                        if 'events' in data:
+                                                            text_parts = []
+                                                            for event in data['events']:
+                                                                if 'segs' in event:
+                                                                    for seg in event['segs']:
+                                                                        if 'utf8' in seg:
+                                                                            text_parts.append(seg['utf8'])
+                                                            transcript_text = ' '.join(text_parts)
+                                                    
+                                                    # Handle SRV format (srv1, srv2, srv3)
+                                                    elif sub.get('ext') in ['srv1', 'srv2', 'srv3']:
+                                                        root = ET.fromstring(content)
+                                                        text_parts = []
+                                                        for text_elem in root.findall('.//text'):
+                                                            if text_elem.text:
+                                                                text_parts.append(text_elem.text)
+                                                        transcript_text = ' '.join(text_parts)
+                                                    
+                                                    if transcript_text:
+                                                        print(f"  ✓ Transcript obtained via yt-dlp subtitles ({lang}, {sub.get('ext')})")
+                                                        break
+                                            except Exception as e:
+                                                continue
+                                    if transcript_text:
+                                        break
+                    
+                    # Method 3: Try automatic captions if no manual subtitles
+                    if not transcript_text and 'automatic_captions' in info:
+                        for lang in ['en', 'en-US', 'en-GB', 'a.en']:
+                            if lang in info['automatic_captions']:
+                                caption_info = info['automatic_captions'][lang]
+                                if caption_info and len(caption_info) > 0:
+                                    # Use same logic as subtitles
+                                    preferred_formats = ['json3', 'srv1', 'srv2', 'srv3', 'vtt']
+                                    sorted_caps = sorted(caption_info, 
+                                                       key=lambda x: preferred_formats.index(x.get('ext', 'other')) 
+                                                       if x.get('ext') in preferred_formats else 999)
+                                    
+                                    for cap in sorted_caps:
+                                        if 'url' in cap and cap.get('ext') != 'vtt':
+                                            try:
+                                                resp = requests.get(cap['url'], timeout=10)
+                                                if resp.status_code == 200:
+                                                    content = resp.text
+                                                    
+                                                    # Handle JSON format (json3)
+                                                    if cap.get('ext') == 'json3':
+                                                        data = json.loads(content)
+                                                        if 'events' in data:
+                                                            text_parts = []
+                                                            for event in data['events']:
+                                                                if 'segs' in event:
+                                                                    for seg in event['segs']:
+                                                                        if 'utf8' in seg:
+                                                                            text_parts.append(seg['utf8'])
+                                                            transcript_text = ' '.join(text_parts)
+                                                    
+                                                    # Handle SRV format (srv1, srv2, srv3)
+                                                    elif cap.get('ext') in ['srv1', 'srv2', 'srv3']:
+                                                        root = ET.fromstring(content)
+                                                        text_parts = []
+                                                        for text_elem in root.findall('.//text'):
+                                                            if text_elem.text:
+                                                                text_parts.append(text_elem.text)
+                                                        transcript_text = ' '.join(text_parts)
+                                                    
+                                                    if transcript_text:
+                                                        print(f"  ✓ Transcript obtained via auto-captions ({lang}, {cap.get('ext')})")
+                                                        break
+                                            except Exception as e:
+                                                continue
+                                    if transcript_text:
+                                        break
+                    
+                    if not transcript_text:
+                        print(f"  Note: No transcript available for {video_id}")
+                        
+                except Exception as fallback_error:
+                    print(f"  Note: Could not extract transcript for {video_id}")
             
             result = {
                 'video_id': video_id,

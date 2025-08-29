@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "yt-dlp-transcripts"
-version = "0.1.0"
+version = "0.1.1"
 description = "Extract video information and transcripts from YouTube videos, playlists, and channels"
 authors = ["Shawn Anderson <shawn@longtailfinancial.com>"]
 readme = "README.md"

@@ -2,7 +2,7 @@
 yt-dlp-transcripts: Extract video information and transcripts from YouTube
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __author__ = "Shawn Anderson"
 __email__ = "shawn@longtailfinancial.com"
 
