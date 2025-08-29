@@ -5,9 +5,9 @@ description = "Extract video information and transcripts from YouTube videos, pl
 authors = ["Shawn Anderson <shawn@longtailfinancial.com>"]
 readme = "README.md"
 license = "MIT"
-homepage = "https://github.com/yourusername/yt-dlp-transcripts"
-repository = "https://github.com/yourusername/yt-dlp-transcripts"
-documentation = "https://github.com/yourusername/yt-dlp-transcripts#readme"
+homepage = "linuxiscool.xyz"
+repository = "https://github.com/LinuxIsCool/yt-dlp-transcripts"
+documentation = "https://github.com/LinuxIsCool/yt-dlp-transcripts#readme"
 keywords = ["youtube", "transcripts", "yt-dlp", "video", "download", "metadata", "playlist", "channel"]
 classifiers = [
     "Development Status :: 4 - Beta",
